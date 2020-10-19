@@ -1,0 +1,28 @@
+#######################################
+# Syntax Coloring Map For tsys01
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+bq76952	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+setDebug	KEYWORD2
+begin	KEYWORD2
+isConnected	KEYWORD2
+reset	KEYWORD2
+
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+bq76952_thermistor	LITERAL1
+
+
+

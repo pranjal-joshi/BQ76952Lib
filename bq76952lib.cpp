@@ -22,11 +22,11 @@
 bool BQ_DEBUG = false;
 
 // BQ76952 - Address Map
-#define ADR_SUBCMD_LOW            0x3E
-#define ADR_SUBCMD_HI             0x3F
-#define ADR_RESP_LEN              0x61
-#define ADR_RESP_START            0x40
-#define ADR_RESP_CHKSUM           0x60
+#define CMD_DIR__SUBCMD_LOW            0x3E
+#define CMD_DIR__SUBCMD_HI             0x3F
+#define CMD_DIR__RESP_LEN              0x61
+#define CMD_DIR__RESP_START            0x40
+#define CMD_DIR__RESP_CHKSUM           0x60
 
 // BQ76952 - Voltage measurement commands
 #define CMD_READ_VOLTAGE_CELL_1   0x14
@@ -49,32 +49,104 @@ bool BQ_DEBUG = false;
 #define CMD_READ_VOLTAGE_PACK     0x36
 
 // BQ76952 - Direct Commands
+#define CMD_DIR_SPROTEC           0x02
+#define CMD_DIR_FPROTEC           0x03
+#define CMD_DIR_SFET              0x06
+#define CMD_DIR_FFET              0x07
 #define CMD_DIR_VCELL_1           0x14
 #define CMD_DIR_INT_TEMP          0x68
 #define CMD_DIR_CC2_CUR           0x3A
 
+// Alert Bits in BQ76952 registers
+#define BIT_SA_SC_DCHG            7
+#define BIT_SA_OC2_DCHG           6
+#define BIT_SA_OC1_DCHG           5
+#define BIT_SA_OC_CHG             4
+#define BIT_SA_CELL_OV            3
+#define BIT_SA_CELL_UV            2
+
 // Inline functions
 #define CELL_NO_TO_ADDR(cellNo) (0x14 + ((cellNo-1)*2))
 
-bq76952::bq76952(unsigned char alertPin) {
-	// Constructor
-  pinMode(alertPin, INPUT);
-  // TODO - Attach IRQ here
-}
+//// LOW LEVEL FUNCTIONS ////
 
 void bq76952::initBQ(void) {
   Wire.begin();
 }
 
-void bq76952::begin(void) {
-  initBQ();
-  BQ_DEBUG = false;
+// Send Direct command
+unsigned int bq76952::directCommand(byte command) {
+  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
+  Wire.write(command);
+  Wire.endTransmission();
+
+  Wire.requestFrom(BQ_I2C_ADDR_READ, 2);
+  while(!Wire.available());
+  byte lsb = Wire.read();
+  byte msb = Wire.read();
+
+  debugPrint(F("[+] Direct Cmd SENT -> "));
+  debugPrintlnCmd((uint16_t)command);
+  debugPrint(F("[+] Direct Cmd RESP <- "));
+  debugPrintlnCmd((uint16_t)(msb << 8 | lsb));
+
+  return (unsigned int)(msb << 8 | lsb);
 }
 
-void bq76952::begin(bool dbg) {
+// Send Sub-command
+void bq76952::subCommand(unsigned int data) {
+  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
+  Wire.write(CMD_DIR__SUBCMD_LOW);
+  Wire.write((byte)data & 0x00FF);
+  Wire.write((byte)(data >> 8) & 0x00FF);
+  Wire.endTransmission();
+
+  debugPrint(F("[+] Sub Cmd SENT to 0x3E -> "));
+  debugPrintlnCmd((uint16_t)data);
+}
+
+// Read subcommand response
+unsigned int bq76952::subCommandResponseInt(void) {
+  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
+  Wire.write(CMD_DIR__RESP_START);
+  Wire.endTransmission();
+
+  Wire.requestFrom(BQ_I2C_ADDR_READ, 2);
+  while(!Wire.available());
+  byte lsb = Wire.read();
+  byte msb = Wire.read();
+
+  debugPrint(F("[+] Sub Cmd uint16_t RESP at 0x40 -> "));
+  debugPrintlnCmd((uint16_t)(msb << 8 | lsb));
+
+  return (unsigned int)(msb << 8 | lsb);
+}
+
+void bq76952::enterConfigUpdate(void) {
+  subCommand(0x0090);
+  delayMicroseconds(2000);
+}
+
+void bq76952::exitConfigUpdate(void) {
+  subCommand(0x0092);
+  delayMicroseconds(1000);
+}
+
+// CHECKSUM = ~(SUM OF ALL DATA BYTES)
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/////// API FUNCTIONS ///////
+
+bq76952::bq76952(byte alertPin) {
+	// Constructor
+  pinMode(alertPin, INPUT);
+  // TODO - Attach IRQ here
+}
+
+void bq76952::begin(void) {
   initBQ();
-  if(dbg) {
-  	BQ_DEBUG = dbg;
+  if(BQ_DEBUG) {
     Serial.begin(DBG_BAUD);
     debugPrintln(F("[+] Initializing BQ76952..."));
   }
@@ -92,43 +164,81 @@ bool bq76952::isConnected(void) {
   }
 }
 
-// Send Direct command
-unsigned int bq76952::directCommand(byte command) {
-  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
-  Wire.write(command);
-  Wire.endTransmission();
-
-  Wire.requestFrom(BQ_I2C_ADDR_READ, 2);
-  while(!Wire.available());
-  byte lsb = Wire.read();
-  byte msb = Wire.read();
-  return (unsigned int)(msb << 8 | lsb);
+// Reset the BQ chip
+void bq76952::reset(void) {
+  subCommand(0x0012);
+  debugPrintln(F("[+] Resetting BQ76952..."));
 }
-
-// Send Sub-command
-void bq76952::subCommand(byte addr, unsigned int data) {
-  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
-  Wire.write(ADR_SUBCMD_LOW);
-  Wire.write((byte)data & 0x00FF);
-  Wire.write((byte)(data >> 8) & 0x00FF);
-  Wire.endTransmission();
-}
-
-// TODO - Implement BLOCK READ after SUBCMD
 
 // Read single cell voltage
-unsigned int bq76952::readCellVoltage(byte cellNumber) {
+unsigned int bq76952::getCellVoltage(byte cellNumber) {
   return directCommand(CELL_NO_TO_ADDR(cellNumber));
 }
 
 // Read All cell voltages in given array - Call like readAllCellVoltages(&myArray)
-void bq76952::readAllCellVoltages(unsigned int* cellArray) {
+void bq76952::getAllCellVoltages(unsigned int* cellArray) {
   for(byte x=1;x<17;x++)
-    cellArray[x] = readCellVoltage(x);
+    cellArray[x] = getCellVoltage(x);
 }
 
-unsigned int bq76952::readCurrent(void) {
+// Measure CC2 current
+unsigned int bq76952::getCurrent(void) {
   return directCommand(CMD_DIR_CC2_CUR);
+}
+
+// Measure chip temperature in °C
+float bq76952::getInternalTemp(void) {
+  float raw = directCommand(CMD_DIR_INT_TEMP)/10.0;
+  return (raw - 273.15);
+}
+
+// Measure thermistor temperature in °C
+float bq76952::getThermistorTemp(bq76952_thermistor thermistor) {
+  byte cmd;
+  switch(thermistor) {
+    case TS1:
+      cmd = 0x70;
+      break;
+    case TS2:
+      cmd = 0x72;
+      break;
+    case TS3:
+      cmd = 0x74;
+      break;
+    case HDQ:
+      cmd = 0x76;
+      break;
+    case DCHG:
+      cmd = 0x78;
+      break;
+    case DDSG:
+      cmd = 0x7A;
+      break;
+  }
+  float raw = directCommand(cmd)/10.0;
+  return (raw - 273.15);
+}
+
+// Check Primary Protection status
+bq76952_protection_t bq76952::getProtectionStatus(void) {
+  bq76952_protection_t prot;
+  byte regData = (byte)directCommand(CMD_DIR_FPROTEC);
+  prot.bits.SC_DCHG = bitRead(regData, BIT_SA_SC_DCHG);
+  prot.bits.OC2_DCHG = bitRead(regData, BIT_SA_OC2_DCHG);
+  prot.bits.OC1_DCHG = bitRead(regData, BIT_SA_OC1_DCHG);
+  prot.bits.OC_CHG = bitRead(regData, BIT_SA_OC_CHG);
+  prot.bits.CELL_OV = bitRead(regData, BIT_SA_CELL_OV);
+  prot.bits.CELL_OU = bitRead(regData, BIT_SA_CELL_OU);
+  return prot;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+///// UTILITY FUNCTIONS /////
+
+void bq76952::setDebug(bool d) {
+  BQ_DEBUG = d;
 }
 
 // Debug printing utilites
@@ -151,3 +261,11 @@ void bq76952::debugPrintln(const __FlashStringHelper* msg) {
   if(BQ_DEBUG)
     Serial.println(msg);
 }
+
+void bq76952::debugPrintlnCmd(unsigned int cmd) {
+  if(BQ_DEBUG) {
+    Serial.print(F("0x"));
+    Serial.println(cmd, HEX);
+  }
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////
