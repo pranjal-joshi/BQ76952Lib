@@ -21,17 +21,39 @@ enum bq76952_thermistor {
 	DDSG
 };
 
+enum bq76952_fet {
+	CHG,
+	DCHG,
+	ALL
+}
+
+enum bq76952_fet_state {
+	OFF,
+	ON
+}
+
 typedef union protection {
 	struct {
-		SC_DCHG            :1;
-		OC2_DCHG           :1;
-		OC1_DCHG           :1;
-		OC_CHG             :1;
-		CELL_OV            :1;
-		CELL_UV            :1;
+		uint8_t SC_DCHG            :1;
+		uint8_t OC2_DCHG           :1;
+		uint8_t OC1_DCHG           :1;
+		uint8_t OC_CHG             :1;
+		uint8_t CELL_OV            :1;
+		uint8_t CELL_UV            :1;
 	} bits;
-	uint8_t data;
 } bq76952_protection_t;
+
+typedef union temperatureProtection {
+	struct {
+		uint8_t OVERTEMP_FET		:1;
+		uint8_t OVERTEMP_INTERNAL	:1;
+		uint8_t OVERTEMP_DCHG		:1;
+		uint8_t OVERTEMP_CHG		:1;
+		uint8_t UNDERTEMP_INTERNAL	:1;
+		uint8_t UNDERTEMP_DCHG		:1;
+		uint8_t UNDERTEMP_CHG		:1;
+	} bits;
+} bq76952_temperature_t;
 
 class bq76952 {
 public:
@@ -45,6 +67,7 @@ public:
 	float getInternalTemp(void);
 	float getThermistorTemp(bq76952_thermistor);
 	bq76952_protection_t getProtectionStatus(void);
+	bq76952_temperature_t getTemperatureStatus(void);
 	void setDebug(bool);
 	void debugPrint(const char*);
 	void debugPrintln(const char*);

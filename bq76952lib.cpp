@@ -22,11 +22,11 @@
 bool BQ_DEBUG = false;
 
 // BQ76952 - Address Map
-#define CMD_DIR__SUBCMD_LOW            0x3E
-#define CMD_DIR__SUBCMD_HI             0x3F
-#define CMD_DIR__RESP_LEN              0x61
-#define CMD_DIR__RESP_START            0x40
-#define CMD_DIR__RESP_CHKSUM           0x60
+#define CMD_DIR_SUBCMD_LOW            0x3E
+#define CMD_DIR_SUBCMD_HI             0x3F
+#define CMD_DIR_RESP_LEN              0x61
+#define CMD_DIR_RESP_START            0x40
+#define CMD_DIR_RESP_CHKSUM           0x60
 
 // BQ76952 - Voltage measurement commands
 #define CMD_READ_VOLTAGE_CELL_1   0x14
@@ -51,6 +51,8 @@ bool BQ_DEBUG = false;
 // BQ76952 - Direct Commands
 #define CMD_DIR_SPROTEC           0x02
 #define CMD_DIR_FPROTEC           0x03
+#define CMD_DIR_STEMP             0x04
+#define CMD_DIR_FTEMP             0x05
 #define CMD_DIR_SFET              0x06
 #define CMD_DIR_FFET              0x07
 #define CMD_DIR_VCELL_1           0x14
@@ -64,6 +66,14 @@ bool BQ_DEBUG = false;
 #define BIT_SA_OC_CHG             4
 #define BIT_SA_CELL_OV            3
 #define BIT_SA_CELL_UV            2
+
+#define BIT_SB_OTF                7
+#define BIT_SB_OTINT              6
+#define BIT_SB_OTD                5
+#define BIT_SB_OTC                4
+#define BIT_SB_UTINT              2
+#define BIT_SB_UTD                1
+#define BIT_SB_UTC                0
 
 // Inline functions
 #define CELL_NO_TO_ADDR(cellNo) (0x14 + ((cellNo-1)*2))
@@ -96,7 +106,7 @@ unsigned int bq76952::directCommand(byte command) {
 // Send Sub-command
 void bq76952::subCommand(unsigned int data) {
   Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
-  Wire.write(CMD_DIR__SUBCMD_LOW);
+  Wire.write(CMD_DIR_SUBCMD_LOW);
   Wire.write((byte)data & 0x00FF);
   Wire.write((byte)(data >> 8) & 0x00FF);
   Wire.endTransmission();
@@ -108,7 +118,7 @@ void bq76952::subCommand(unsigned int data) {
 // Read subcommand response
 unsigned int bq76952::subCommandResponseInt(void) {
   Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
-  Wire.write(CMD_DIR__RESP_START);
+  Wire.write(CMD_DIR_RESP_START);
   Wire.endTransmission();
 
   Wire.requestFrom(BQ_I2C_ADDR_READ, 2);
@@ -228,8 +238,45 @@ bq76952_protection_t bq76952::getProtectionStatus(void) {
   prot.bits.OC1_DCHG = bitRead(regData, BIT_SA_OC1_DCHG);
   prot.bits.OC_CHG = bitRead(regData, BIT_SA_OC_CHG);
   prot.bits.CELL_OV = bitRead(regData, BIT_SA_CELL_OV);
-  prot.bits.CELL_OU = bitRead(regData, BIT_SA_CELL_OU);
+  prot.bits.CELL_UV = bitRead(regData, BIT_SA_CELL_UV);
   return prot;
+}
+
+// Check Primary Protection status
+bq76952_temperature_t bq76952::getTemperatureStatus(void) {
+  bq76952_temperature_t prot;
+  byte regData = (byte)directCommand(CMD_DIR_FTEMP);
+  prot.bits.OVERTEMP_FET = bitRead(regData, BIT_SB_OTC);
+  prot.bits.OVERTEMP_INTERNAL = bitRead(regData, BIT_SB_OTINT);
+  prot.bits.OVERTEMP_DCHG = bitRead(regData, BIT_SB_OTD);
+  prot.bits.OVERTEMP_CHG = bitRead(regData, BIT_SB_OTC);
+  prot.bits.UNDERTEMP_INTERNAL = bitRead(regData, BIT_SB_UTINT);
+  prot.bits.UNDERTEMP_DCHG = bitRead(regData, BIT_SB_UTD);
+  prot.bits.UNDERTEMP_CHG = bitRead(regData, BIT_SB_UTC);
+  return prot;
+}
+
+void bq76952::setFET(bq76952_fet fet, bq76952_fet_state state) {
+  unsigned int subcmd;
+  switch(state) {
+    case OFF:
+      switch(fet) {
+        case DCHG:
+          subcmd = 0x0093;
+          break;
+        case CHG:
+          subcmd = 0x0094;
+          break;
+        default:
+          subcmd = 0x0095;
+          break;
+      }
+      break;
+    case ON:
+      subcmd = 0x0096;
+      break;
+  }
+  subCommand(subcmd);
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
