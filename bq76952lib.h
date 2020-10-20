@@ -23,14 +23,14 @@ enum bq76952_thermistor {
 
 enum bq76952_fet {
 	CHG,
-	DCHG,
+	DCH,
 	ALL
-}
+};
 
 enum bq76952_fet_state {
 	OFF,
 	ON
-}
+};
 
 typedef union protection {
 	struct {
@@ -68,7 +68,11 @@ public:
 	float getThermistorTemp(bq76952_thermistor);
 	bq76952_protection_t getProtectionStatus(void);
 	bq76952_temperature_t getTemperatureStatus(void);
+	void setFET(bq76952_fet, bq76952_fet_state);
+	bool isDischarging(void);
+	bool isCharging(void);
 	void setDebug(bool);
+	void setCellOvervoltageProtection(unsigned int, unsigned int);
 	void debugPrint(const char*);
 	void debugPrintln(const char*);
 	void debugPrint(const __FlashStringHelper*);
@@ -81,4 +85,7 @@ private:
 	unsigned int subCommandResponseInt(void);
 	void enterConfigUpdate(void);
 	void exitConfigUpdate(void);
+	byte computeChecksum(byte, byte);
+	void writeDataMemory(unsigned int , byte);
+	byte readDataMemory(unsigned int);
 };

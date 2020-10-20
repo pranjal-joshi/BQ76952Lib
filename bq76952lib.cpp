@@ -58,6 +58,7 @@ bool BQ_DEBUG = false;
 #define CMD_DIR_VCELL_1           0x14
 #define CMD_DIR_INT_TEMP          0x68
 #define CMD_DIR_CC2_CUR           0x3A
+#define CMD_DIR_FET_STAT          0x7F
 
 // Alert Bits in BQ76952 registers
 #define BIT_SA_SC_DCHG            7
@@ -77,6 +78,8 @@ bool BQ_DEBUG = false;
 
 // Inline functions
 #define CELL_NO_TO_ADDR(cellNo) (0x14 + ((cellNo-1)*2))
+#define LOW_BYTE(data) (byte)(data & 0x00FF)
+#define HIGH_BYTE(data) (byte)((data >> 8) & 0x00FF)
 
 //// LOW LEVEL FUNCTIONS ////
 
@@ -132,17 +135,69 @@ unsigned int bq76952::subCommandResponseInt(void) {
   return (unsigned int)(msb << 8 | lsb);
 }
 
+// Enter config update mode
 void bq76952::enterConfigUpdate(void) {
   subCommand(0x0090);
   delayMicroseconds(2000);
 }
 
+// Exit config update mode
 void bq76952::exitConfigUpdate(void) {
   subCommand(0x0092);
   delayMicroseconds(1000);
 }
 
-// CHECKSUM = ~(SUM OF ALL DATA BYTES)
+// Write Byte to Data memory of BQ76952
+void bq76952::writeDataMemory(unsigned int addr, byte data) {
+  byte chksum = 0;
+  chksum = computeChecksum(chksum, BQ_I2C_ADDR_WRITE);
+  chksum = computeChecksum(chksum, CMD_DIR_SUBCMD_LOW);
+  chksum = computeChecksum(chksum, LOW_BYTE(addr));
+  chksum = computeChecksum(chksum, HIGH_BYTE(addr));
+  chksum = computeChecksum(chksum, data);
+
+  enterConfigUpdate();
+  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
+  Wire.write(CMD_DIR_SUBCMD_LOW);
+  Wire.write(LOW_BYTE(addr));
+  Wire.write(HIGH_BYTE(addr));
+  Wire.write(data);
+  Wire.endTransmission();
+
+  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
+  Wire.write(CMD_DIR_RESP_CHKSUM);
+  Wire.write(chksum);
+  Wire.write(0x05);
+  Wire.endTransmission();
+  exitConfigUpdate();
+}
+
+// Read Byte from Data memory of BQ76952
+byte bq76952::readDataMemory(unsigned int addr) {
+  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
+  Wire.write(CMD_DIR_SUBCMD_LOW);
+  Wire.write(LOW_BYTE(addr));
+  Wire.write(HIGH_BYTE(addr));
+  Wire.endTransmission();
+
+  Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
+  Wire.write(CMD_DIR_RESP_START);
+  Wire.endTransmission();
+
+  Wire.requestFrom(BQ_I2C_ADDR_READ, 1);
+  while(!Wire.available());
+  return (byte)Wire.read();
+}
+
+// Compute checksome = ~(sum of all bytes)
+byte bq76952::computeChecksum(byte oldChecksum, byte data) {
+  if(!oldChecksum)
+    oldChecksum = data;
+  else
+    oldChecksum = ~(oldChecksum) + data;
+  return ~(oldChecksum);
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -242,7 +297,7 @@ bq76952_protection_t bq76952::getProtectionStatus(void) {
   return prot;
 }
 
-// Check Primary Protection status
+// Check Temperature Protection status
 bq76952_temperature_t bq76952::getTemperatureStatus(void) {
   bq76952_temperature_t prot;
   byte regData = (byte)directCommand(CMD_DIR_FTEMP);
@@ -277,6 +332,48 @@ void bq76952::setFET(bq76952_fet fet, bq76952_fet_state state) {
       break;
   }
   subCommand(subcmd);
+}
+
+// is Charging FET ON?
+bool bq76952::isCharging(void) {
+  byte regData = (byte)directCommand(CMD_DIR_FET_STAT);
+  if(regData & 0x01) {
+    debugPrintln(F("[+] Charging FET -> ON"));
+    return true;
+  }
+  debugPrintln(F("[+] Charging FET -> OFF"));
+  return false;
+}
+
+// is Discharging FET ON?
+bool bq76952::isDischarging(void) {
+  byte regData = (byte)directCommand(CMD_DIR_FET_STAT);
+  if(regData & 0x04) {
+    debugPrintln(F("[+] Discharging FET -> ON"));
+    return true;
+  }
+  debugPrintln(F("[+] Discharging FET -> OFF"));
+  return false;
+}
+
+// Set user-defined overvoltage protection
+void bq76952::setCellOvervoltageProtection(unsigned int mv, unsigned int ms) {
+  byte thresh = (byte)mv/50.6;
+  uint16_t dly = (uint16_t)(ms/3.3)-2;
+  if(thresh < 20 || thresh > 110)
+    thresh = 86;
+  else {
+    debugPrint(F("[+] COV Threshold => "));
+    debugPrintlnCmd(thresh);
+    writeDataMemory(0x9278, thresh);
+  }
+  if(dly < 1 || dly > 2047)
+    dly = 74;
+  else {
+    debugPrint(F("[+] COV Delay => "));
+    debugPrintlnCmd(dly);
+    writeDataMemory(0x9279, dly);
+  }
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
