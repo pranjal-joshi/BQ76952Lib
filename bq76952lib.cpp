@@ -148,7 +148,7 @@ void bq76952::exitConfigUpdate(void) {
 }
 
 // Write Byte to Data memory of BQ76952
-void bq76952::writeDataMemory(unsigned int addr, byte data) {
+void bq76952::writeDataMemory(unsigned int addr, unsigned int data, byte noOfBytes) {
   byte chksum = 0;
   chksum = computeChecksum(chksum, BQ_I2C_ADDR_WRITE);
   chksum = computeChecksum(chksum, CMD_DIR_SUBCMD_LOW);
@@ -161,7 +161,9 @@ void bq76952::writeDataMemory(unsigned int addr, byte data) {
   Wire.write(CMD_DIR_SUBCMD_LOW);
   Wire.write(LOW_BYTE(addr));
   Wire.write(HIGH_BYTE(addr));
-  Wire.write(data);
+  Wire.write(LOW_BYTE(data));
+  if(noOfBytes == 2)
+    Wire.write(HIGH_BYTE(data));
   Wire.endTransmission();
 
   Wire.beginTransmission(BQ_I2C_ADDR_WRITE);
@@ -365,14 +367,125 @@ void bq76952::setCellOvervoltageProtection(unsigned int mv, unsigned int ms) {
   else {
     debugPrint(F("[+] COV Threshold => "));
     debugPrintlnCmd(thresh);
-    writeDataMemory(0x9278, thresh);
+    writeDataMemory(0x9278, thresh, 1);
   }
   if(dly < 1 || dly > 2047)
     dly = 74;
   else {
     debugPrint(F("[+] COV Delay => "));
     debugPrintlnCmd(dly);
-    writeDataMemory(0x9279, dly);
+    writeDataMemory(0x9279, dly, 2);
+  }
+}
+
+// Set user-defined undervoltage protection
+void bq76952::setCellUndervoltageProtection(unsigned int mv, unsigned int ms) {
+  byte thresh = (byte)mv/50.6;
+  uint16_t dly = (uint16_t)(ms/3.3)-2;
+  if(thresh < 20 || thresh > 90)
+    thresh = 50;
+  else {
+    debugPrint(F("[+] CUV Threshold => "));
+    debugPrintlnCmd(thresh);
+    writeDataMemory(0x9275, thresh, 1);
+  }
+  if(dly < 1 || dly > 2047)
+    dly = 74;
+  else {
+    debugPrint(F("[+] CUV Delay => "));
+    debugPrintlnCmd(dly);
+    writeDataMemory(0x9276, dly, 2);
+  }
+}
+
+// Set user-defined charging current protection
+void bq76952::setChargingOvercurrentProtection(byte mv, byte ms) {
+  byte thresh = (byte)mv/2;
+  byte dly = (byte)(ms/3.3)-2;
+  if(thresh < 2 || thresh > 62)
+    thresh = 2;
+  else {
+    debugPrint(F("[+] OCC Threshold => "));
+    debugPrintlnCmd(thresh);
+    writeDataMemory(0x9280, thresh, 1);
+  }
+  if(dly < 1 || dly > 127)
+    dly = 4;
+  else {
+    debugPrint(F("[+] OCC Delay => "));
+    debugPrintlnCmd(dly);
+    writeDataMemory(0x9281, dly, 1);
+  }
+}
+
+// Set user-defined discharging current protection
+void bq76952::setDischargingOvercurrentProtection(byte mv, byte ms) {
+  byte thresh = (byte)mv/2;
+  byte dly = (byte)(ms/3.3)-2;
+  if(thresh < 2 || thresh > 100)
+    thresh = 2;
+  else {
+    debugPrint(F("[+] OCD Threshold => "));
+    debugPrintlnCmd(thresh);
+    writeDataMemory(0x9282, thresh, 1);
+  }
+  if(dly < 1 || dly > 127)
+    dly = 1;
+  else {
+    debugPrint(F("[+] OCD Delay => "));
+    debugPrintlnCmd(dly);
+    writeDataMemory(0x9283, dly, 1);
+  }
+}
+
+// Set user-defined discharging current protection
+void bq76952::setDischargingShortcircuitProtection(bq76952_scd_thresh thresh, unsigned int us) {
+  byte dly = (byte)(us/15)+1;
+  debugPrint(F("[+] SCD Threshold => "));
+  debugPrintlnCmd(thresh);
+  writeDataMemory(0x9286, thresh, 1);
+  if(dly < 1 || dly > 31)
+    dly = 2;
+  else {
+    debugPrint(F("[+] SCD Delay (uS) => "));
+    debugPrintlnCmd(dly);
+    writeDataMemory(0x9287, dly, 1);
+  }
+}
+
+// Set user-defined charging over temperature protection
+void bq76952::setChargingTemperatureMaxLimit(signed int temp, byte sec) {
+  if(temp < -40 || temp > 120)
+    temp = 55;
+  else {
+    debugPrint(F("[+] OTC Threshold => "));
+    debugPrintlnCmd(temp);
+    writeDataMemory(0x929A, temp, 1);
+  }
+  if(sec< 0 || sec > 255)
+    sec = 2;
+  else {
+    debugPrint(F("[+] OTC Delay => "));
+    debugPrintlnCmd(sec);
+    writeDataMemory(0x929B, sec, 1);
+  }
+}
+
+// Set user-defined discharging over temperature protection
+void bq76952::setDischargingTemperatureMaxLimit(signed int temp, byte sec) {
+  if(temp < -40 || temp > 120)
+    temp = 60;
+  else {
+    debugPrint(F("[+] OTD Threshold => "));
+    debugPrintlnCmd(temp);
+    writeDataMemory(0x929D, temp, 1);
+  }
+  if(sec< 0 || sec > 255)
+    sec = 2;
+  else {
+    debugPrint(F("[+] OTD Delay => "));
+    debugPrintlnCmd(sec);
+    writeDataMemory(0x929E, sec, 1);
   }
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////

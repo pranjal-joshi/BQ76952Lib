@@ -32,6 +32,25 @@ enum bq76952_fet_state {
 	ON
 };
 
+enum bq76952_scd_thresh {
+	SCD_10,
+	SCD_20,
+	SCD_40,
+	SCD_60,
+	SCD_80,
+	SCD_100,
+	SCD_125,
+	SCD_150,
+	SCD_175,
+	SCD_200,
+	SCD_250,
+	SCD_300,
+	SCD_350,
+	SCD_400,
+	SCD_450,
+	SCD_500
+};
+
 typedef union protection {
 	struct {
 		uint8_t SC_DCHG            :1;
@@ -73,6 +92,12 @@ public:
 	bool isCharging(void);
 	void setDebug(bool);
 	void setCellOvervoltageProtection(unsigned int, unsigned int);
+	void setCellUndervoltageProtection(unsigned int, unsigned int);
+	void setChargingOvercurrentProtection(byte, byte);
+	void setChargingTemperatureMaxLimit(signed int, byte);
+	void setDischargingOvercurrentProtection(byte, byte);
+	void setDischargingShortcircuitProtection(bq76952_scd_thresh, unsigned int);
+	void setDischargingTemperatureMaxLimit(signed int, byte);
 	void debugPrint(const char*);
 	void debugPrintln(const char*);
 	void debugPrint(const __FlashStringHelper*);
@@ -86,6 +111,6 @@ private:
 	void enterConfigUpdate(void);
 	void exitConfigUpdate(void);
 	byte computeChecksum(byte, byte);
-	void writeDataMemory(unsigned int , byte);
+	void writeDataMemory(unsigned int , unsigned int, byte);
 	byte readDataMemory(unsigned int);
 };
